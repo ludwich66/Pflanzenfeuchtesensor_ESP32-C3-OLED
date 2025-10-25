@@ -1,8 +1,8 @@
-IN PROGRESS
 
-**KICAD SCHEMATIC SOIL_MOISTURE_SENSOR**
 
-OLED-SCREEN (Start & Measure)
+
+
+**OLED-SCREEN (Start & Measure)**
 
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/OLED_1.jpeg" alt="Logo" width="400" height="400"><img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/OLED_2.jpeg" alt="Logo" width="400" height="400">
 
@@ -28,7 +28,11 @@ OLED-SCREEN (Start & Measure)
   }
 }
 
+**Hardware**
+
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/ESP32-C3-OLED_Pinout.jpg" alt="Logo" width="400" height="400"><img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Soil-Moisture-Sensor_Generic.jpg" alt="Logo" width="400" height="400">
+
+**KICAD SCHEMATIC SOIL_MOISTURE_SENSOR**
 
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/KICAD_ESP32-C3-OLED.jpg" alt="Logo" width="800" height="300">
 
