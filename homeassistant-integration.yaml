@@ -1,0 +1,498 @@
+# ============================================================================
+# HOME ASSISTANT INTEGRATION FÜR ESP32-C3 FEUCHTESENSOR v2.76
+# ============================================================================
+# 
+# Datei: homeassistant_feuchtesensor_integration.yaml
+# Autor: ESP32-C3 Feuchtesensor Projekt
+# Version: 2.76
+# Datum: 25. Oktober 2025
+#
+# MQTT Topic: home/feuchtesensor/01
+#
+# JSON Struktur (v2.76 mit Untergruppen):
+# {
+#   "device": {
+#     "devicename": "ESP32-C3_OLED-Feuchtesensor_01",
+#     "timestamp": 388,
+#     "measurement_count": 6,
+#     "hardware_version": "2.76"
+#   },
+#   "battery": {
+#     "voltage": 3.29,
+#     "adc": 2043,
+#     "percent": 24
+#   },
+#   "sensor": {
+#     "voltage": 1.26,
+#     "adc": 861,
+#     "percent": 0,
+#     "moisture_status": "DRY"
+#   }
+# }
+#
+# ============================================================================
+
+# ============================================================================
+# MQTT SENSOR KONFIGURATION
+# ============================================================================
+# Fügen Sie diese Konfiguration in Ihre configuration.yaml ein
+# oder erstellen Sie eine separate Datei sensors/feuchtesensor.yaml
+
+mqtt:
+  sensor:
+    # ========================================================================
+    # BATTERIE SENSOREN
+    # ========================================================================
+    
+    # Batterie Spannung (V)
+    - name: "Feuchtesensor Batterie Spannung"
+      unique_id: "feuchtesensor_01_battery_voltage"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.battery.voltage }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:battery-outline
+      
+    # Batterie Prozent (%)
+    - name: "Feuchtesensor Batterie"
+      unique_id: "feuchtesensor_01_battery_percent"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.battery.percent }}"
+      unit_of_measurement: "%"
+      device_class: battery
+      state_class: measurement
+      icon: mdi:battery
+      
+    # Batterie ADC (Raw)
+    - name: "Feuchtesensor Batterie ADC"
+      unique_id: "feuchtesensor_01_battery_adc"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.battery.adc }}"
+      unit_of_measurement: "ADC"
+      state_class: measurement
+      icon: mdi:chip
+      entity_category: diagnostic
+    
+    # ========================================================================
+    # SENSOR SENSOREN (Feuchtigkeit)
+    # ========================================================================
+    
+    # Feuchtigkeit Prozent (%)
+    - name: "Pflanze Feuchtigkeit"
+      unique_id: "feuchtesensor_01_moisture_percent"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.sensor.percent }}"
+      unit_of_measurement: "%"
+      device_class: moisture
+      state_class: measurement
+      icon: mdi:water-percent
+      
+    # Feuchtigkeit Status (Text)
+    - name: "Pflanze Status"
+      unique_id: "feuchtesensor_01_moisture_status"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.sensor.moisture_status }}"
+      icon: mdi:water-alert
+      
+    # Sensor Spannung (V)
+    - name: "Feuchtesensor Sensor Spannung"
+      unique_id: "feuchtesensor_01_sensor_voltage"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.sensor.voltage }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+      icon: mdi:flash
+      entity_category: diagnostic
+      
+    # Sensor ADC (Raw)
+    - name: "Feuchtesensor Sensor ADC"
+      unique_id: "feuchtesensor_01_sensor_adc"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.sensor.adc }}"
+      unit_of_measurement: "ADC"
+      state_class: measurement
+      icon: mdi:chip
+      entity_category: diagnostic
+    
+    # ========================================================================
+    # DEVICE SENSOREN (Metadaten)
+    # ========================================================================
+    
+    # Measurement Counter
+    - name: "Feuchtesensor Messungen"
+      unique_id: "feuchtesensor_01_measurement_count"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.device.measurement_count }}"
+      unit_of_measurement: "Messungen"
+      state_class: total_increasing
+      icon: mdi:counter
+      entity_category: diagnostic
+      
+    # Hardware Version
+    - name: "Feuchtesensor Hardware Version"
+      unique_id: "feuchtesensor_01_hardware_version"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.device.hardware_version }}"
+      icon: mdi:chip
+      entity_category: diagnostic
+      
+    # Timestamp (Last Update)
+    - name: "Feuchtesensor Letzte Aktualisierung"
+      unique_id: "feuchtesensor_01_last_update"
+      state_topic: "home/feuchtesensor/01"
+      value_template: "{{ value_json.device.timestamp | int | timestamp_local }}"
+      device_class: timestamp
+      icon: mdi:clock-outline
+      entity_category: diagnostic
+
+# ============================================================================
+# BINARY SENSOR KONFIGURATION (Optional)
+# ============================================================================
+# Binäre Sensoren für Alarme und Benachrichtigungen
+
+mqtt:
+  binary_sensor:
+    # Batterie niedrig Alarm (< 20%)
+    - name: "Feuchtesensor Batterie Niedrig"
+      unique_id: "feuchtesensor_01_battery_low"
+      state_topic: "home/feuchtesensor/01"
+      value_template: >
+        {% if value_json.battery.percent < 20 %}
+          ON
+        {% else %}
+          OFF
+        {% endif %}
+      device_class: battery
+      icon: mdi:battery-alert
+      
+    # Pflanze zu trocken (< 20%)
+    - name: "Pflanze Trocken"
+      unique_id: "feuchtesensor_01_plant_dry"
+      state_topic: "home/feuchtesensor/01"
+      value_template: >
+        {% if value_json.sensor.percent < 20 %}
+          ON
+        {% else %}
+          OFF
+        {% endif %}
+      device_class: problem
+      icon: mdi:water-alert
+      
+    # Pflanze zu nass (> 80%)
+    - name: "Pflanze Zu Nass"
+      unique_id: "feuchtesensor_01_plant_wet"
+      state_topic: "home/feuchtesensor/01"
+      value_template: >
+        {% if value_json.sensor.percent > 80 %}
+          ON
+        {% else %}
+          OFF
+        {% endif %}
+      device_class: moisture
+      icon: mdi:water-alert
+
+# ============================================================================
+# TEMPLATE SENSOREN (Erweitert)
+# ============================================================================
+# Berechnete Sensoren für zusätzliche Funktionen
+
+template:
+  - sensor:
+      # Batterie Gesundheit
+      - name: "Feuchtesensor Batterie Gesundheit"
+        unique_id: "feuchtesensor_01_battery_health"
+        state: >
+          {% set percent = states('sensor.feuchtesensor_batterie') | int %}
+          {% if percent > 80 %}
+            Ausgezeichnet
+          {% elif percent > 50 %}
+            Gut
+          {% elif percent > 20 %}
+            Niedrig
+          {% else %}
+            Kritisch
+          {% endif %}
+        icon: >
+          {% set percent = states('sensor.feuchtesensor_batterie') | int %}
+          {% if percent > 80 %}
+            mdi:battery
+          {% elif percent > 50 %}
+            mdi:battery-60
+          {% elif percent > 20 %}
+            mdi:battery-30
+          {% else %}
+            mdi:battery-alert
+          {% endif %}
+        
+      # Gieß-Empfehlung
+      - name: "Pflanze Gieß Empfehlung"
+        unique_id: "feuchtesensor_01_watering_recommendation"
+        state: >
+          {% set moisture = states('sensor.pflanze_feuchtigkeit') | int %}
+          {% if moisture < 20 %}
+            Jetzt gießen!
+          {% elif moisture < 40 %}
+            Bald gießen
+          {% elif moisture < 60 %}
+            Optional
+          {% else %}
+            Nicht gießen
+          {% endif %}
+        icon: >
+          {% set moisture = states('sensor.pflanze_feuchtigkeit') | int %}
+          {% if moisture < 20 %}
+            mdi:water-alert
+          {% elif moisture < 40 %}
+            mdi:water
+          {% else %}
+            mdi:water-off
+          {% endif %}
+        
+      # Geschätzte Tage bis leer (Batterie)
+      - name: "Feuchtesensor Batterie Tage"
+        unique_id: "feuchtesensor_01_battery_days"
+        unit_of_measurement: "Tage"
+        state: >
+          {% set percent = states('sensor.feuchtesensor_batterie') | int %}
+          {% set days_per_percent = 0.6 %}
+          {{ (percent * days_per_percent) | round(0) }}
+        icon: mdi:calendar-clock
+
+# ============================================================================
+# AUTOMATIONEN (Beispiele)
+# ============================================================================
+# Benachrichtigungen und Aktionen
+
+automation:
+  # Benachrichtigung: Batterie niedrig
+  - alias: "Feuchtesensor Batterie Niedrig Warnung"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.feuchtesensor_batterie
+        below: 20
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🔋 Batterie niedrig"
+          message: "Feuchtesensor Batterie bei {{ states('sensor.feuchtesensor_batterie') }}%"
+          
+  # Benachrichtigung: Pflanze gießen
+  - alias: "Pflanze Gießen Erinnerung"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.pflanze_feuchtigkeit
+        below: 20
+    condition:
+      - condition: time
+        after: "08:00:00"
+        before: "22:00:00"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "💧 Pflanze gießen"
+          message: "Feuchtigkeit bei {{ states('sensor.pflanze_feuchtigkeit') }}%"
+          
+  # Benachrichtigung: Pflanze zu nass
+  - alias: "Pflanze Zu Nass Warnung"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.pflanze_feuchtigkeit
+        above: 80
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Pflanze zu nass"
+          message: "Überwässert? Feuchtigkeit bei {{ states('sensor.pflanze_feuchtigkeit') }}%"
+
+# ============================================================================
+# LOVELACE DASHBOARD (UI)
+# ============================================================================
+# Beispiel Dashboard-Karte
+
+# Fügen Sie dies zu Ihrem Lovelace Dashboard hinzu:
+
+type: vertical-stack
+cards:
+  # Header
+  - type: markdown
+    content: |
+      ## 🌱 Pflanze Feuchtesensor
+      **{{ states('sensor.feuchtesensor_hardware_version') }}**
+      
+  # Feuchtigkeit
+  - type: gauge
+    entity: sensor.pflanze_feuchtigkeit
+    name: Bodenfeuchtigkeit
+    min: 0
+    max: 100
+    needle: true
+    severity:
+      green: 40
+      yellow: 20
+      red: 0
+      
+  # Status
+  - type: entities
+    entities:
+      - entity: sensor.pflanze_status
+        name: Status
+      - entity: sensor.pflanze_giess_empfehlung
+        name: Empfehlung
+        
+  # Batterie
+  - type: entity
+    entity: sensor.feuchtesensor_batterie
+    name: Batterie
+    icon: mdi:battery
+    
+  # Details (ausklappbar)
+  - type: entities
+    title: Details
+    entities:
+      - entity: sensor.feuchtesensor_sensor_spannung
+        name: Sensor Spannung
+      - entity: sensor.feuchtesensor_sensor_adc
+        name: Sensor ADC
+      - entity: sensor.feuchtesensor_batterie_spannung
+        name: Batterie Spannung
+      - entity: sensor.feuchtesensor_batterie_adc
+        name: Batterie ADC
+      - entity: sensor.feuchtesensor_messungen
+        name: Messungen
+      - entity: sensor.feuchtesensor_letzte_aktualisierung
+        name: Letzte Aktualisierung
+    show_header_toggle: false
+
+# ============================================================================
+# GRAFANA/HISTORY KONFIGURATION (Optional)
+# ============================================================================
+# Für langfristige Daten-Visualisierung
+
+recorder:
+  include:
+    entities:
+      - sensor.pflanze_feuchtigkeit
+      - sensor.feuchtesensor_batterie
+      - sensor.pflanze_status
+      - sensor.feuchtesensor_messungen
+
+history:
+  include:
+    entities:
+      - sensor.pflanze_feuchtigkeit
+      - sensor.feuchtesensor_batterie
+      
+# Langzeit-Statistiken aktivieren
+influxdb:
+  include:
+    entities:
+      - sensor.pflanze_feuchtigkeit
+      - sensor.feuchtesensor_batterie
+      - sensor.feuchtesensor_sensor_spannung
+      - sensor.feuchtesensor_batterie_spannung
+
+# ============================================================================
+# MOBILE APP DASHBOARD (Optional)
+# ============================================================================
+# Kompakte Ansicht für die Home Assistant Mobile App
+
+mobile_view:
+  type: vertical-stack
+  cards:
+    - type: horizontal-stack
+      cards:
+        - type: gauge
+          entity: sensor.pflanze_feuchtigkeit
+          min: 0
+          max: 100
+          needle: true
+          severity:
+            green: 40
+            yellow: 20
+            red: 0
+        - type: gauge
+          entity: sensor.feuchtesensor_batterie
+          min: 0
+          max: 100
+          needle: true
+          severity:
+            green: 20
+            yellow: 10
+            red: 0
+            
+    - type: entities
+      entities:
+        - sensor.pflanze_status
+        - sensor.pflanze_giess_empfehlung
+
+# ============================================================================
+# INSTALLATIONSANLEITUNG
+# ============================================================================
+#
+# 1. MQTT BROKER EINRICHTEN:
+#    - Stellen Sie sicher, dass ein MQTT Broker läuft
+#    - Standard: Mosquitto Add-on in Home Assistant
+#    - IP: 192.168.178.35 (wie in v2.76 konfiguriert)
+#
+# 2. KONFIGURATION HINZUFÜGEN:
+#    - Kopieren Sie die Sensor-Definitionen in configuration.yaml
+#    - Oder erstellen Sie sensors/feuchtesensor.yaml
+#
+# 3. HOME ASSISTANT NEU LADEN:
+#    - Einstellungen → System → Konfiguration neu laden
+#    - Oder: Home Assistant komplett neu starten
+#
+# 4. SENSOREN PRÜFEN:
+#    - Entwicklerwerkzeuge → Zustände
+#    - Suchen Sie nach "feuchtesensor"
+#    - Alle Sensoren sollten sichtbar sein
+#
+# 5. DASHBOARD ERSTELLEN:
+#    - Übersicht → Bearbeiten
+#    - Karte hinzufügen
+#    - Lovelace Code einfügen
+#
+# 6. AUTOMATIONEN TESTEN:
+#    - Entwicklerwerkzeuge → Dienste
+#    - Automatisierung manuell auslösen
+#
+# ============================================================================
+# FEHLERBEHEBUNG
+# ============================================================================
+#
+# Problem: Sensoren zeigen "Unavailable"
+# Lösung: 
+#   - Prüfen Sie MQTT Broker Status
+#   - Prüfen Sie Topic: home/feuchtesensor/01
+#   - Entwicklerwerkzeuge → MQTT → Topic abhören
+#
+# Problem: Falsche Werte
+# Lösung:
+#   - Prüfen Sie JSON Struktur in MQTT
+#   - Value Templates testen in Developer Tools
+#
+# Problem: Keine Benachrichtigungen
+# Lösung:
+#   - Mobile App konfiguriert?
+#   - Automation aktiviert?
+#   - Bedingungen erfüllt?
+#
+# ============================================================================
+# WEITERE INFORMATIONEN
+# ============================================================================
+#
+# Home Assistant MQTT Integration:
+# https://www.home-assistant.io/integrations/mqtt/
+#
+# MQTT Sensor Documentation:
+# https://www.home-assistant.io/integrations/sensor.mqtt/
+#
+# Template Sensors:
+# https://www.home-assistant.io/integrations/template/
+#
+# Automations:
+# https://www.home-assistant.io/docs/automation/
+#
+# ============================================================================
