@@ -1,0 +1,711 @@
+"""
+ESP32-C3-OLED Kapazitiver Feuchtesensor - Version 2.76b 25-10-2025
+============================================================
+Button-Poll Version mit geschachteltem MQTT JSON
+
+Änderungen v2.75 → v2.76:
+- NEU: MQTT JSON mit Untergruppen (device, battery, sensor)
+- Bessere Struktur für Home Assistant
+- Alle anderen Features wie v2.75
+
+Hardware-Konfiguration:
+=======================
+PIN-BELEGUNG:
+  GPIO0:  Sensor Power Control (OUTPUT)
+  GPIO1:  ADC1_CH1 - U-SENSOR Messung (INPUT, Analog)
+  GPIO2:  ADC1_CH2 - VBAT Messung (INPUT, Analog)
+  GPIO3:  Button mit Pull-Up (INPUT, Digital)
+  GPIO5:  I2C SDA (OLED Display)
+  GPIO6:  I2C SCL (OLED Display)
+  GPIO8:  Interne LED (OUTPUT, LOW active)
+
+SPANNUNGSTEILER:
+  Sensor (GPIO1):
+    Schaltung: GND - 10kΩ - GPIO1 - 20kΩ - U_SENSOR
+    Teilverhältnis: 10k/(10k+20k) = 0.333
+    Spannungsteiler-Faktor: 1/0.333 = 3.0
+
+  Battery (GPIO2):
+    Schaltung: GND - 10kΩ - GPIO2 - 30kΩ - VBAT
+    Teilverhältnis: gemessen ≈ 0.303 (nicht exakt 0.25)
+    Spannungsteiler-Faktor: 3.3 (kalibriert)
+
+ADC KONFIGURATION:
+  Beide Channels: atten(2) = 6dB, 0-2.0V Range, V_REF = 2.0V
+
+STATUS-AUSGABEN:
+  ADC < 565:       "       WET"     - Sehr feucht
+  ADC 565-615:     "   WET>OK "  - Wird trockener
+  ADC 615-715:     "   OK     "      - Optimal
+  ADC 715-860:     " OK>DRY   "  - Wird trocken
+  ADC >= 860:      "DRY"     - Sehr trocken
+
+PROZENT-BERECHNUNGEN:
+  Sensor: WET(420)=100%, DRY(850)=0%
+  Battery: 4.2V=100%, 3.0V=0%
+
+MQTT JSON STRUKTUR (NEU in v2.76 - mit Untergruppen):
+  {
+    "device": {
+      "devicename": "ESP32-C3_OLED-Feuchtesensor_01",
+      "timestamp": 388,
+      "measurement_count": 6,
+      "hardware_version": "2.76"
+    },
+
+    "battery": {
+      "voltage": 3.29,
+      "adc": 2043,
+      "percent": 24
+    },
+
+    "sensor": {
+      "voltage": 1.26,
+      "adc": 861,
+      "percent": 0,
+      "moisture_status": "DRY"
+    }
+  }
+
+Autor: Mit geschachteltem JSON
+Datum: Oktober 2025
+Version: 2.76
+"""
+
+import machine
+import time
+from machine import Pin, ADC, I2C, deepsleep, reset_cause, DEEPSLEEP_RESET, RTC
+import network
+import ujson
+import gc
+
+# RTC für persistenten Counter
+try:
+    rtc = RTC()
+    print("✓ RTC für Counter verfügbar")
+except Exception as e:
+    print("⚠ RTC nicht verfügbar: %s" % str(e))
+    rtc = None
+
+# ============================================================================
+# KONFIGURATION
+# ============================================================================
+
+VERSION = "2.76b"
+
+# WLAN
+WIFI_SSID = "YOURSSID"
+WIFI_PASSWORD = "YOURPASSWORD"
+WIFI_TIMEOUT = 15
+TX_POWER = 5
+RETRY_COUNT = 5
+
+# MQTT
+MQTT_BROKER = "192.168.x.x"
+MQTT_PORT = 1883
+MQTT_USER = ""
+MQTT_PASSWORD = ""
+MQTT_CLIENT_ID = "ESP32-C3-OLED_Feuchtesensor_01"
+MQTT_TOPIC = "home/feuchtesensor/01"
+
+# Display
+DISPLAY_TIMEOUT = 5
+OLED_WIDTH = 72
+OLED_HEIGHT = 40
+
+# Button-Poll vor Sleep
+BUTTON_POLL_TIME = 5
+
+# Deep Sleep
+SLEEP_TIME = 60
+
+# Sensor Kalibrierung
+MOISTURE_DRY = 850      # 0% Feuchtigkeit
+MOISTURE_WET = 420      # 100% Feuchtigkeit
+MOISTURE_OK_MIN = 715
+MOISTURE_OK_MAX = 570
+
+# Battery Kalibrierung
+BATTERY_MAX = 4.2  # 100%
+BATTERY_MIN = 3.0  # 0%
+
+# Spannungsteiler-Faktoren
+SENSOR_VOLTAGE_FACTOR = 3.0 #todo
+BATTERY_VOLTAGE_FACTOR = 3.3
+
+# ============================================================================
+# GLOBALE VARIABLEN
+# ============================================================================
+
+measurement_count = 0
+display = None
+wlan = None
+mqtt_client = None
+i2c = None
+adc_sensor = None
+adc_battery = None
+sensor_power = None
+led_internal = None
+wake_button = None
+
+# ============================================================================
+# RTC COUNTER FUNKTIONEN
+# ============================================================================
+
+def load_counter():
+    """Lädt Counter aus RTC Memory"""
+    if rtc is None:
+        return 0
+
+    try:
+        data = rtc.memory()
+        if data and len(data) >= 4:
+            count = int.from_bytes(data[0:4], 'little')
+            print("✓ Counter aus RTC geladen: %d" % count)
+            return count
+    except Exception as e:
+        print("⚠ RTC Laden fehlgeschlagen: %s" % str(e))
+
+    return 0
+
+def save_counter(count):
+    """Speichert Counter in RTC Memory"""
+    if rtc is None:
+        return False
+
+    try:
+        data = count.to_bytes(4, 'little')
+        rtc.memory(data)
+        print("✓ Counter in RTC gespeichert: %d" % count)
+        return True
+    except Exception as e:
+        print("✗ RTC Speichern fehlgeschlagen: %s" % str(e))
+        return False
+
+# ============================================================================
+# PROZENT-BERECHNUNGEN
+# ============================================================================
+
+def calc_sensor_percent(adc_value):
+    """
+    Berechnet Sensor-Feuchtigkeit in Prozent
+    WET (420) = 100%, DRY (850) = 0%
+    """
+    sensor_range = MOISTURE_DRY - MOISTURE_WET
+    percent = ((MOISTURE_DRY - adc_value) / sensor_range) * 100
+    return max(0, min(100, int(percent)))
+
+def calc_battery_percent(voltage):
+    """
+    Berechnet Battery-Ladung in Prozent
+    4.2V = 100%, 3.0V = 0%
+    """
+    bat_range = BATTERY_MAX - BATTERY_MIN
+    percent = ((voltage - BATTERY_MIN) / bat_range) * 100
+    return max(0, min(100, int(percent)))
+
+# ============================================================================
+# HARDWARE-INITIALISIERUNG
+# ============================================================================
+
+def init_hardware():
+    """Initialisiert Hardware-Komponenten"""
+    global i2c, adc_sensor, adc_battery, sensor_power, led_internal, wake_button
+
+    print("\n" + "="*70)
+    print("HARDWARE-INITIALISIERUNG")
+    print("="*70)
+
+    # I2C
+    try:
+        i2c = I2C(0, sda=Pin(5), scl=Pin(6), freq=400000)
+        devices = i2c.scan()
+        if devices:
+            print("✓ I2C initialisiert - Geräte: %s" % str([hex(d) for d in devices]))
+        else:
+            print("⚠ I2C initialisiert - Geräte nicht gefunden")
+        i2c = I2C(0, sda=Pin(5), scl=Pin(6), freq=400000)
+    except Exception as e:
+        print("✗ I2C Fehler: %s" % str(e))
+        i2c = None
+
+    # ADC Sensor (GPIO1)
+    try:
+        adc_sensor = ADC(Pin(1))
+        adc_sensor.atten(2)
+        print("✓ ADC Sensor (GPIO1/ADC1_CH1, 6dB/0-2.0V)")
+    except Exception as e:
+        print("✗ ADC Sensor Fehler: %s" % str(e))
+        adc_sensor = None
+
+    # ADC Battery (GPIO2)
+    try:
+        adc_battery = ADC(Pin(2))
+        adc_battery.atten(2)
+        print("✓ ADC Battery (GPIO2/ADC1_CH2, 6dB/0-2.0V)")
+    except Exception as e:
+        print("✗ ADC Battery Fehler: %s" % str(e))
+        adc_battery = None
+
+    # Button (GPIO3)
+    try:
+        wake_button = Pin(3, Pin.IN, Pin.PULL_UP)
+        print("✓ Button (GPIO3, PULL_UP)")
+    except Exception as e:
+        print("✗ Button Fehler: %s" % str(e))
+        wake_button = DummyPin()
+
+    # Sensor Power (GPIO0)
+    try:
+        sensor_power = Pin(0, Pin.OUT)
+        sensor_power.off()
+        print("✓ Sensor Power (GPIO0) - AUS")
+    except Exception as e:
+        print("✗ Sensor Power Fehler: %s" % str(e))
+        sensor_power = DummyPin()
+
+    # LED (GPIO8, LOW active)
+    try:
+        led_internal = Pin(8, Pin.OUT)
+        led_internal.on()
+        print("✓ LED (GPIO8, LOW active)")
+    except Exception as e:
+        print("✗ LED Fehler: %s" % str(e))
+        led_internal = DummyPin()
+
+    print("="*70)
+
+class DummyPin:
+    def on(self): pass
+    def off(self): pass
+    def value(self, *args): return 1 if not args else None
+
+# ============================================================================
+# DISPLAY FUNKTIONEN
+# ============================================================================
+
+def init_display():
+    global display
+
+    if i2c is None:
+        print("⚠ Kein I2C - Display übersprungen")
+        return False
+
+    try:
+        from ssd1306_7240_drv import SSD1306
+        display = SSD1306(i2c)
+
+        try:
+            display.poweron()
+            print("✓ Display poweron()")
+        except AttributeError:
+            try:
+                display.power(True)
+                print("✓ Display power(True)")
+            except:
+                print("✓ Display init")
+
+        display.fill(0)
+        display.text("ESP32-C3", 0, 0)
+        display.text("OLED", 0, 10)
+        display.text("Sensor V:", 0, 20)
+        display.text(VERSION, 0, 30)
+        display.show()
+        print("✓ Display initialisiert")
+        time.sleep(1)
+        return True
+
+    except ImportError:
+        print("⚠ ssd1306_7240_drv.py nicht gefunden")
+        return False
+    except Exception as e:
+        print("✗ Display Fehler: %s" % str(e))
+        return False
+
+def display_values(vbat, vsensor, status, count):
+    if display is None:
+        return
+
+    try:
+        display.fill(0)
+        display.text("Bat: %.2fV" % vbat, 0, 0)
+        display.text("Sen: %.2fV" % vsensor, 0, 10)
+        display.text(" %s" % status, 0, 20)
+        if OLED_HEIGHT >= 40:
+            display.text("#%d" % count, 0, 30)
+        display.show()
+    except Exception as e:
+        print("✗ Display: %s" % str(e))
+
+# ============================================================================
+# LED FUNKTIONEN
+# ============================================================================
+
+def led_blink(times=1, delay=0.1):
+    try:
+        for _ in range(times):
+            led_internal.off()
+            time.sleep(delay)
+            led_internal.on()
+            time.sleep(delay)
+    except:
+        pass
+
+def led_on():
+    try:
+        led_internal.off()
+    except:
+        pass
+
+def led_off():
+    try:
+        led_internal.on()
+    except:
+        pass
+
+# ============================================================================
+# ADC MESSFUNKTIONEN
+# ============================================================================
+
+def read_battery_voltage():
+    if adc_battery is None:
+        return 0, 3.7
+
+    try:
+        led_on()
+        readings = []
+        for _ in range(10):
+            readings.append(adc_battery.read())
+            time.sleep_ms(10)
+        led_off()
+
+        avg_reading_b = sum(readings) // len(readings)
+        V_REF = 2.0
+        adc_voltage = avg_reading_b * (V_REF / 4095.0)
+        battery_voltage = adc_voltage * BATTERY_VOLTAGE_FACTOR
+
+        print("  Batterie: ADC=%d, V_ADC=%.3fV, VBAT=%.2fV" %
+              (avg_reading_b, adc_voltage, battery_voltage))
+
+        return avg_reading_b, battery_voltage
+    except Exception as e:
+        print("✗ Batterie: %s" % str(e))
+        led_off()
+        return 0, 3.7
+
+def read_sensor_voltage():
+    if adc_sensor is None:
+        return 2000, 1.5
+
+    try:
+        sensor_power.on()
+        print("  Sensor Power: EIN")
+        time.sleep_ms(100)
+
+        led_blink(2, 0.05)
+
+        readings = []
+        for _ in range(10):
+            readings.append(adc_sensor.read())
+            time.sleep_ms(10)
+
+        sensor_power.off()
+        print("  Sensor Power: AUS")
+
+        avg_reading_s = sum(readings) // len(readings)
+        V_REF = 2.0
+        adc_voltage = avg_reading_s * (V_REF / 4095.0)
+        sensor_voltage = adc_voltage * SENSOR_VOLTAGE_FACTOR
+
+        print("  Sensor: ADC=%d, V_ADC=%.3fV, U_SENS=%.2fV" %
+              (avg_reading_s, adc_voltage, sensor_voltage))
+
+        return avg_reading_s, sensor_voltage
+    except Exception as e:
+        print("✗ Sensor: %s" % str(e))
+        sensor_power.off()
+        return 2000, 1.5
+
+# ============================================================================
+# STATUS FUNKTIONEN
+# ============================================================================
+
+def determine_moisture_status(avg_reading_s):
+    if avg_reading_s >= 860:
+        return "DRY"
+    elif avg_reading_s >= 715:
+        return "OK>DRY"
+    elif avg_reading_s >= 615:
+        return "  OK"
+    elif avg_reading_s >= 565:
+        return "  WET>OK"
+    else:
+        return "     WET"
+
+# ============================================================================
+# BUTTON FUNCTIONS
+# ============================================================================
+
+def check_button_before_sleep(timeout_seconds=BUTTON_POLL_TIME):
+    print("\nButton-Poll (%ds)..." % timeout_seconds)
+    print("Taster: Messung sofort")
+    print("Timeout: Deep Sleep" if SLEEP_TIME > 0 else "Timeout: Nächste Messung")
+
+    countdown = timeout_seconds
+    while countdown > 0:
+        try:
+            if wake_button.value() == 0:
+                print("✓ Button gedrückt!")
+                led_blink(2, 0.1)
+                return True
+        except:
+            pass
+
+        if countdown % 1 == 0:
+            print("  %ds..." % countdown, end="")
+            print("")
+
+        time.sleep(0.1)
+        countdown -= 0.1
+
+    print("Timeout")
+    return False
+
+# ============================================================================
+# WLAN FUNKTIONEN
+# ============================================================================
+
+def connect_wifi():
+    global wlan
+
+    print("\n" + "="*70)
+    print("WLAN-VERBINDUNG")
+    print("="*70)
+
+    try:
+        led_blink(3, 0.1)
+
+        wlan = network.WLAN(network.STA_IF)
+
+        print("Reset WiFi Interface...")
+        wlan.active(False)
+        time.sleep(0.5)
+        wlan.active(True)
+        time.sleep(0.5)
+
+        wlan.config(pm=wlan.PM_NONE)
+        wlan.config(txpower=TX_POWER)
+        wlan.config(reconnects=RETRY_COUNT)
+
+        if wlan.isconnected():
+            wlan.disconnect()
+            time.sleep(2)
+
+        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+
+        start_time = time.time()
+        while not wlan.isconnected() and (time.time() - start_time) < WIFI_TIMEOUT:
+            time.sleep(0.5)
+
+        if wlan.isconnected():
+            config = wlan.ifconfig()
+            print("✓ WLAN VERBUNDEN - IP: %s" % config[0])
+            return True
+        else:
+            print("✗ WLAN Timeout")
+            return False
+
+    except Exception as e:
+        print("✗ WLAN: %s" % str(e))
+        return False
+
+# ============================================================================
+# MQTT FUNKTIONEN
+# ============================================================================
+
+def publish_mqtt(data):
+    global mqtt_client
+
+    try:
+        from umqtt.simple import MQTTClient
+
+        mqtt_client = MQTTClient(
+            MQTT_CLIENT_ID,
+            MQTT_BROKER,
+            port=MQTT_PORT
+        )
+
+        mqtt_client.connect()
+        json_data = ujson.dumps(data)
+        mqtt_client.publish(MQTT_TOPIC, json_data)
+        mqtt_client.disconnect()
+
+        print("✓ MQTT publiziert")
+        print("  %s" % json_data)
+        return True
+
+    except Exception as e:
+        print("✗ MQTT: %s" % str(e))
+        return False
+
+# ============================================================================
+# DEEP SLEEP FUNKTIONEN
+# ============================================================================
+
+def enter_deep_sleep():
+    if display:
+        try:
+            display.fill(0)
+            display.show()
+            display.poweroff()
+        except:
+            pass
+
+    led_off()
+
+    try:
+        sensor_power.off()
+    except:
+        pass
+
+    if wlan:
+        try:
+            wlan.active(False)
+        except:
+            pass
+
+    gc.collect()
+    deepsleep(SLEEP_TIME * 1000)
+
+# ============================================================================
+# HAUPTPROGRAMM (mit geschachteltem JSON)
+# ============================================================================
+
+def main():
+    global measurement_count
+
+    print("\n" + "="*70)
+    print(" ESP32-C3 FEUCHTESENSOR - VERSION 2.76")
+    print(" Mit geschachteltem MQTT JSON (Untergruppen)")
+    print("="*70)
+
+    # Counter laden
+    if reset_cause() == DEEPSLEEP_RESET:
+        measurement_count = load_counter()
+        print("✓ Wake from Sleep - Counter: %d" % measurement_count)
+    else:
+        print("✓ Power-On - Counter: 0")
+        measurement_count = 0
+
+    led_blink(3, 0.1)
+
+    while True:
+        measurement_count += 1
+
+        print("\n" + "="*70)
+        print("MESSUNG #%d" % measurement_count)
+        print("="*70)
+
+        init_hardware()
+        init_display()
+
+        print("\n" + "="*70)
+        print("SENSORMESSUNGEN")
+        print("="*70)
+
+        avg_reading_b, vbat = read_battery_voltage()
+        avg_reading_s, vsensor = read_sensor_voltage()
+        status = determine_moisture_status(avg_reading_s)
+
+        # Prozent berechnen
+        battery_percent = calc_battery_percent(vbat)
+        sensor_percent = calc_sensor_percent(avg_reading_s)
+
+        print("\n  Ergebnis:")
+        print("  - Batterie: %.2fV (ADC: %d, %d%%)" % (vbat, avg_reading_b, battery_percent))
+        print("  - Sensor: %.2fV (ADC: %d, %d%%)" % (vsensor, avg_reading_s, sensor_percent))
+        print("  - Status: %s" % status)
+        print("="*70)
+
+        display_values(vbat, vsensor, status, measurement_count)
+        time.sleep(3)
+
+        # MQTT data mit UNTERGRUPPEN (NEU in v2.76)
+        mqtt_data = {
+            "device": {
+                "devicename": MQTT_CLIENT_ID,
+                "timestamp": int(time.time()),
+                "measurement_count": measurement_count,
+                "software_version": str(VERSION)
+            },
+
+            "battery": {
+                "b_voltage": round(vbat, 2),
+                "b_adc": avg_reading_b,
+                "b_percent": battery_percent
+            },
+
+            "sensor": {
+                "s_voltage": round(vsensor, 2),
+                "s_adc": avg_reading_s,
+                "percent": sensor_percent,
+
+            },
+
+            "s_moisture_status": status
+        }
+
+        if connect_wifi():
+            publish_mqtt(mqtt_data)
+            time.sleep(1)
+
+        button_pressed = check_button_before_sleep(BUTTON_POLL_TIME)
+
+        if button_pressed:
+            print("\n→ Nächste Messung sofort!")
+            time.sleep(1)
+        else:
+            if SLEEP_TIME > 0:
+                print("\n→ Speichere Counter und gehe in Sleep...")
+
+                # Counter speichern VOR Sleep!
+                save_counter(measurement_count)
+
+                if display:
+                    try:
+                        display.fill(0)
+                        display.show()
+                        display.poweroff()
+                    except:
+                        pass
+
+                gc.collect()
+                enter_deep_sleep()
+            else:
+                print("\n→ Dauerbetrieb: Nächste Messung in 3s...")
+                time.sleep(3)
+
+# ============================================================================
+# PROGRAMMSTART
+# ============================================================================
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nProgramm beendet")
+        led_off()
+    except Exception as e:
+        print("\n\n✗ FEHLER: %s" % str(e))
+        import sys
+        sys.print_exception(e)
+        led_blink(10, 0.1)
+    finally:
+        if display:
+            try:
+                display.fill(0)
+                display.text("   Stop", 0, 20)
+                display.show()
+            except:
+                pass
+        led_off()
