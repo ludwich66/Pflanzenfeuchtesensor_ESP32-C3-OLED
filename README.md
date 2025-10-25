@@ -31,9 +31,11 @@
   }
 }
 
+
 **HARDWARE**
 
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/ESP32-C3-OLED_Pinout.jpg" alt="Logo" width="400" height="400"><img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Soil-Moisture-Sensor_Generic.jpg" alt="Logo" width="400" height="400">
+
 
 **KICAD SCHEMATIC SOIL_MOISTURE_SENSOR**
 
@@ -41,7 +43,13 @@
 
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/KICAD_Soil_Moisture_Senor.jpg" alt="Logo" width="800" height="300">
 
+
 **HOME ASSISTANT** (Perplexity)
 
 Integration see Code xx.YAML
+
+
+**WIRING**
+
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Schematic_cirkitdesigner.jpg" alt="Logo" width="450" height="525">
 
