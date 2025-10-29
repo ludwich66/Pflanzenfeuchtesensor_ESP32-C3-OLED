@@ -7,6 +7,13 @@
 * Add customised µPython - Driver for 72x40 OLED -- Flip Funktion working
 
 
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Moisture-Picture/pixil-frame-40x40_Wellen.png" alt="Logo" width="100" height="100">
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Moisture-Picture/pixil-frame-40x40_Blume_Blatt_links.png" alt="Logo" width="100" height="100">
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Moisture-Picture/pixil-frame-40x40_Blume_Blatt_links_und_rechts.png" alt="Logo" width="100" height="100">
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Moisture-Picture/pixil-frame-40x40_Blume_Blatt_rechts.png" alt="Logo" width="100" height="100">
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Moisture-Picture/pixil-frame-40x40_Gießkanne.png" alt="Logo" width="100" height="100">
+
+
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/OLED_1.jpeg" alt="Logo" width="400" height="400"><img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/OLED_2.jpeg" alt="Logo" width="400" height="400">
 
 **MQTT**
