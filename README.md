@@ -34,7 +34,7 @@
   }
 }
 
-**Chart:**
+**Chart:** (Each category is 86 ADC levels wide!)
 
 <img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Soil-Moisture-Sensor_Chart.jpg" alt="Logo" width="600" height="300">
 
