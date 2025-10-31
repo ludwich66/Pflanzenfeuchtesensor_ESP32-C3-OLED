@@ -34,10 +34,13 @@
   }
 }
 
+**Chart:**
+
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Soil-Moisture-Sensor_Generic.jpg" alt="Logo" width="600" height="300">
 
 **HARDWARE**
 
-<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/ESP32-C3-OLED_Pinout.jpg" alt="Logo" width="400" height="400"><img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Soil-Moisture-Sensor_Generic.jpg" alt="Logo" width="400" height="400">
+<img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/ESP32-C3-OLED_Pinout.jpg" alt="1" width="400" height="400"><img src="https://github.com/ludwich66/Pflanzenfeuchtesensor_ESP32-C3-OLED/blob/main/Soil-Moisture-Sensor_Generic.jpg" alt="2" width="400" height="400">
 
 
 **KICAD SCHEMATIC SOIL_MOISTURE_SENSOR**
